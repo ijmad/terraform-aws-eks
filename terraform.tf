@@ -1,5 +1,7 @@
 terraform {
-  backend "local" {
-    path = "state/terraform.tfstate"
+  backend "s3" {
+    bucket = "ijmad-terraform"
+    key    = "terraform.tfstate"
+    region = "eu-west-1"
   }
 }
