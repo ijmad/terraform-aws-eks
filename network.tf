@@ -16,7 +16,36 @@ resource "aws_subnet" "pub_subnet" {
   map_public_ip_on_launch = false
 
   tags = {
-    "name" = "${var.project_name}-pub-subnet"
+    "name" = "${var.project_name}-pub-subnet",
+    "kubernetes.io/cluster/${var.project_name}-eks-cluster" = "shared",
+    "kubernetes.io/role/elb" = 1
+  }
+}
+
+resource "aws_network_acl" "pub_network_acl" {
+  vpc_id       = aws_vpc.vpc.id
+  subnet_ids   = [aws_subnet.pub_subnet.id]
+
+  ingress {
+    rule_no    = 100
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    protocol   = -1
+    from_port  = 0
+    to_port    = 0
+  }
+
+  egress {
+    rule_no    = 200
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    protocol   = -1
+    from_port  = 0
+    to_port    = 0
+  }
+
+  tags = {
+    "name"      = "${var.project_name}-pub-network-acl"
   }
 }
 
@@ -70,7 +99,71 @@ resource "aws_subnet" "prv_subnet" {
 
   tags = {
     "name" = "${var.project_name}-prv-subnet-${count.index}",
-    "kubernetes.io/cluster/${var.project_name}-eks-cluster" = "shared"
+    "kubernetes.io/cluster/${var.project_name}-eks-cluster" = "shared",
+    "kubernetes.io/role/internal-elb" = 1
+  }
+}
+
+resource "aws_network_acl" "prv_network_acl" {
+  vpc_id       = aws_vpc.vpc.id
+  subnet_ids   = aws_subnet.prv_subnet.*.id
+
+  ingress {
+    rule_no    = 100
+    action     = "allow"
+    cidr_block = "10.0.100.0/24"
+    protocol   = -1
+    from_port  = 0
+    to_port    = 0
+  }
+
+  ingress {
+    rule_no    = 101
+    action     = "allow"
+    cidr_block = "10.0.0.0/16"
+    protocol   = -1
+    from_port  = 0
+    to_port    = 0
+  }
+
+  ingress {
+    rule_no    = 1001
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    protocol   = -1
+    from_port  = 0
+    to_port    = 0
+  }
+
+  egress {
+    rule_no    = 200
+    action     = "allow"
+    cidr_block = "10.0.100.0/24"
+    protocol   = -1
+    from_port  = 0
+    to_port    = 0
+  }
+
+  egress {
+    rule_no    = 201
+    action     = "allow"
+    protocol   = -1
+    cidr_block = "10.0.0.0/16"
+    from_port  = 0
+    to_port    = 0
+  }
+
+  egress {
+    rule_no    = 2001
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    protocol   = -1
+    from_port  = 0
+    to_port    = 0
+  }
+
+  tags = {
+    "name"      = "${var.project_name}-prv-network-acl"
   }
 }
 
