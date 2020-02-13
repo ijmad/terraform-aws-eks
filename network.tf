@@ -6,34 +6,90 @@ resource "aws_vpc" "vpc" {
   }
 }
 
-resource "aws_subnet" "subnet" {
-  count = 3
 
-  vpc_id            = aws_vpc.vpc.id
-  availability_zone = data.aws_availability_zones.available.names[count.index]
-  cidr_block        = "10.0.${count.index}.0/24"
+# define a network gateway that can talk to the internet in a public subnet
+
+resource "aws_subnet" "pub_subnet" {
+  vpc_id                  = aws_vpc.vpc.id
+  availability_zone       = data.aws_availability_zones.available.names[0]
+  cidr_block              = "10.0.100.0/24"
+  map_public_ip_on_launch = false
 
   tags = {
-    "kubernetes.io/cluster/${var.project_name}-eks-cluster" = "shared"
+    "name" = "${var.project_name}-pub-subnet"
   }
 }
 
-resource "aws_internet_gateway" "internet_gateway" {
+resource "aws_internet_gateway" "pub_internet_gateway" {
   vpc_id = aws_vpc.vpc.id
+
+  tags = {
+    "name" = "${var.project_name}-internet-gateway",
+  }
 }
 
-resource "aws_route_table" "route_table" {
+resource "aws_route_table" "pub_route_table" {
   vpc_id = aws_vpc.vpc.id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.internet_gateway.id
+    gateway_id = aws_internet_gateway.pub_internet_gateway.id
+  }
+
+  tags = {
+    "name" = "${var.project_name}-pub-route-table",
   }
 }
 
-resource "aws_route_table_association" "route_table_association" {
+resource "aws_route_table_association" "pub_route_table_association" {
+  subnet_id      = aws_subnet.pub_subnet.id
+  route_table_id = aws_route_table.pub_route_table.id
+}
+
+resource "aws_nat_gateway" "nat_gateway" {
+  allocation_id = var.elastic_ip_id
+  subnet_id     = aws_subnet.pub_subnet.id
+
+  tags = {
+    "name" = "${var.project_name}-nat-gateway",
+  }
+}
+
+
+
+
+# define private subnets with a NAT to allow them to talk to the world
+
+resource "aws_subnet" "prv_subnet" {
   count = 3
 
-  subnet_id      = aws_subnet.subnet.*.id[count.index]
-  route_table_id = aws_route_table.route_table.id
+  vpc_id                  = aws_vpc.vpc.id
+  availability_zone       = data.aws_availability_zones.available.names[count.index]
+  cidr_block              = "10.0.${count.index}.0/24"  
+  map_public_ip_on_launch = false
+
+  tags = {
+    "name" = "${var.project_name}-prv-subnet-${count.index}",
+    "kubernetes.io/cluster/${var.project_name}-eks-cluster" = "shared"
+  }
+}
+
+resource "aws_route_table" "prv_route_table" {
+  vpc_id = aws_vpc.vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat_gateway.id
+  }
+
+  tags = {
+    "name" = "${var.project_name}-prv-route-table",
+  }
+}
+
+resource "aws_route_table_association" "prv_route_table_association" {
+  count = 3
+
+  subnet_id      = aws_subnet.prv_subnet.*.id[count.index]
+  route_table_id = aws_route_table.prv_route_table.id
 }
