@@ -30,11 +30,22 @@ resource "aws_security_group" "security_group" {
   name        = "${var.project_name}-security-group"
   vpc_id      = aws_vpc.vpc.id
 
+  # egress to public subnet for nat gateway
+
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = [aws_subnet.pub_subnet.cidr_block] # only to the public subnet now
+    cidr_blocks = [ aws_subnet.pub_subnet.cidr_block ] 
+  }
+
+  # egress to efs subnets for file storage
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = aws_subnet.efs_subnet[*].cidr_block
   }
 }
 
