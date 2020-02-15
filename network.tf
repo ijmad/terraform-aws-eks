@@ -126,14 +126,14 @@ resource "aws_network_acl" "prv_network_acl" {
     to_port    = 0
   }
 
-  # ingress {
-  #   rule_no    = 1001
-  #   action     = "allow"
-  #   cidr_block = "0.0.0.0/0"
-  #   protocol   = -1
-  #   from_port  = 0
-  #   to_port    = 0
-  # }
+  ingress {
+    rule_no    = 1001
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    protocol   = -1
+    from_port  = 0
+    to_port    = 0
+  }
 
   egress {
     rule_no    = 200
@@ -153,14 +153,14 @@ resource "aws_network_acl" "prv_network_acl" {
     to_port    = 0
   }
 
-  # egress {
-  #   rule_no    = 2001
-  #   action     = "allow"
-  #   cidr_block = "0.0.0.0/0"
-  #   protocol   = -1
-  #   from_port  = 0
-  #   to_port    = 0
-  # }
+  egress {
+    rule_no    = 2001
+    action     = "allow"
+    cidr_block = "0.0.0.0/0"
+    protocol   = -1
+    from_port  = 0
+    to_port    = 0
+  }
 
   tags = {
     "name"      = "${var.project_name}-prv-network-acl"
