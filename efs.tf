@@ -24,14 +24,14 @@ resource "aws_efs_mount_target" "efs_mount_target" {
   file_system_id  = aws_efs_file_system.efs_file_system.id
 }
 
-# ingress from k8s (can be pared down to just NFS port)
+# ingress from k8s
 # define as a separate rule to avoid cycle
 
 resource "aws_security_group_rule" "efs_security_group_k8s" {
   security_group_id        = aws_security_group.efs_security_group.id
   type                     = "ingress"
-  protocol                 = "-1"
-  from_port                = 0
-  to_port                  = 0
+  protocol                 = "TCP"
+  from_port                = 2049
+  to_port                  = 2049
   source_security_group_id = aws_eks_cluster.eks_cluster.vpc_config[0].cluster_security_group_id
 }
