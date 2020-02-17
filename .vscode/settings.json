@@ -1,6 +1,6 @@
 {
-    "terraform.languageServer": {
-        "enabled": true,
-        "args": []
-    }
+    // "terraform.languageServer": {
+    //     "enabled": true,
+    //     "args": []
+    // }
 }
