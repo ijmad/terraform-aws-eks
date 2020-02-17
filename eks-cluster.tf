@@ -33,28 +33,32 @@ resource "aws_security_group" "security_group" {
   # egress to public subnet for nat gateway
 
   egress {
+    protocol    = "-1"
     from_port   = 0
     to_port     = 0
-    protocol    = "-1"
     cidr_blocks = [ aws_subnet.pub_subnet.cidr_block ] 
   }
 
-  # egress to efs subnets for file storage
+  # egress to EFS (can be pared down to just NFS port)
 
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = aws_subnet.efs_subnet[*].cidr_block
+    protocol        = "-1"
+    from_port       = 0
+    to_port         = 0
+    security_groups = [ aws_security_group.efs_security_group.id ]
   }
 }
 
 resource "aws_eks_cluster" "eks_cluster" {
-  name     = "${var.project_name}-eks-cluster"
-  role_arn = aws_iam_role.cluster_iam_role.arn
+  name                      = "${var.project_name}-eks-cluster"
+  role_arn                  = aws_iam_role.cluster_iam_role.arn
+  enabled_cluster_log_types = ["api", "controllerManager", "scheduler"]
 
   vpc_config {
-    security_group_ids = [aws_security_group.security_group.id]
+    security_group_ids = [
+      aws_security_group.security_group.id
+    ]
+
     subnet_ids         = aws_subnet.prv_subnet[*].id
   }
 
