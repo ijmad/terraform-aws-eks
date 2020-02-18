@@ -1,6 +1,6 @@
 resource "aws_iam_role" "cluster_iam_role" {
-  name               = "${var.project_name}-cluster-iam-role"
-  assume_role_policy = <<-END
+  name                              = "${var.project_name}-cluster-iam-role"
+  assume_role_policy                = <<-END
     {
       "Version": "2012-10-17",
       "Statement": [
@@ -17,29 +17,29 @@ resource "aws_iam_role" "cluster_iam_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "cluster_iam_role_policy_attachment" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.cluster_iam_role.name
+  policy_arn                        = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  role                              = aws_iam_role.cluster_iam_role.name
 }
 
 resource "aws_iam_role_policy_attachment" "service_iam_role_policy_attachment" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
-  role       = aws_iam_role.cluster_iam_role.name
+  policy_arn                        = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+  role                              = aws_iam_role.cluster_iam_role.name
 }
 
 resource "aws_security_group" "security_group" {
   name        = "${var.project_name}-security-group"
   vpc_id      = aws_vpc.vpc.id
 
-  # egress to public subnet for nat gateway
+  # egress to nat subnet for nat gateway
 
   egress {
     protocol    = "-1"
     from_port   = 0
     to_port     = 0
-    cidr_blocks = [ aws_subnet.pub_subnet.cidr_block ] 
+    cidr_blocks = aws_subnet.nat_subnet.*.cidr_block
   }
 
-  # egress to EFS
+  # egress to efs subnets for file storage
 
   egress {
     protocol        = "TCP"
@@ -50,16 +50,12 @@ resource "aws_security_group" "security_group" {
 }
 
 resource "aws_eks_cluster" "eks_cluster" {
-  name                      = "${var.project_name}-eks-cluster"
-  role_arn                  = aws_iam_role.cluster_iam_role.arn
-  enabled_cluster_log_types = ["api", "controllerManager", "scheduler"]
+  name     = "${var.project_name}-eks-cluster"
+  role_arn = aws_iam_role.cluster_iam_role.arn
 
   vpc_config {
-    security_group_ids = [
-      aws_security_group.security_group.id
-    ]
-
-    subnet_ids         = aws_subnet.prv_subnet[*].id
+    security_group_ids = [aws_security_group.security_group.id]
+    subnet_ids         = aws_subnet.node_subnet[*].id
   }
 
   depends_on = [

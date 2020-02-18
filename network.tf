@@ -1,191 +1,139 @@
 resource "aws_vpc" "vpc" {
-  cidr_block           = "10.0.0.0/16"
-  
-  enable_dns_hostnames = true
-  enable_dns_support   = true
+  cidr_block                       = "10.0.0.0/16"
+  enable_dns_support               = true
+  enable_dns_hostnames             = true
 
   tags = {
+    "Name" = "${var.project_name}-vpc",
     "kubernetes.io/cluster/${var.project_name}-eks-cluster" = "shared"
   }
 }
 
+# gateway for traffic to leave the vpc
+# only one exists for the whole vpc
+resource "aws_internet_gateway" "internet_gateway" {
+  vpc_id = aws_vpc.vpc.id
 
-# define a network gateway that can talk to the internet in a public subnet
+  tags = {
+    "Name" = "${var.project_name}-internet-gateway",
+  }
+}
 
-resource "aws_subnet" "pub_subnet" {
+# subnet for NAT gateways / egress
+resource "aws_subnet" "nat_subnet" {
+  count                   = 3
+  
   vpc_id                  = aws_vpc.vpc.id
   availability_zone       = data.aws_availability_zones.available.names[0]
-  cidr_block              = "10.0.100.0/24"
+  cidr_block              = "10.0.${100 + count.index}.0/24"
   map_public_ip_on_launch = false
 
   tags = {
-    "name" = "${var.project_name}-pub-subnet",
+    "Name" = "${var.project_name}-nat-subnet-${count.index}",
+  }
+}
+
+# route table for nat subnets
+resource "aws_route_table" "nat_route_table" {
+  vpc_id = aws_vpc.vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.internet_gateway.id
+  }
+
+  tags = {
+    "Name" = "${var.project_name}-nat-route-table",
+  }
+}
+
+resource "aws_route_table_association" "nat_route_table_association" {
+  count          = 3
+  subnet_id      = aws_subnet.nat_subnet[count.index].id
+  route_table_id = aws_route_table.nat_route_table.id
+}
+
+# place a NAT gateway in each of the NAT subnets
+resource "aws_nat_gateway" "nat_gateway" {
+  count         = 3
+  allocation_id = var.elastic_ip_ids[count.index]
+  subnet_id     = aws_subnet.nat_subnet[count.index].id
+
+  tags = {
+    "Name" = "${var.project_name}-nat-gateway-${count.index}",
+  }
+}
+
+# subnets for EKS balancers
+resource "aws_subnet" "balancer_subnet" {
+  count = 3
+
+  vpc_id                  = aws_vpc.vpc.id
+  availability_zone       = data.aws_availability_zones.available.names[count.index]
+  cidr_block              = "10.0.${110 + count.index}.0/24"  
+  map_public_ip_on_launch = false
+
+  tags = {
+    "Name" = "${var.project_name}-balancer-subnet-${count.index}",
     "kubernetes.io/cluster/${var.project_name}-eks-cluster" = "shared",
     "kubernetes.io/role/elb" = 1
   }
 }
 
-resource "aws_network_acl" "pub_network_acl" {
-  vpc_id       = aws_vpc.vpc.id
-  subnet_ids   = [aws_subnet.pub_subnet.id]
-
-  ingress {
-    rule_no    = 100
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    protocol   = -1
-    from_port  = 0
-    to_port    = 0
-  }
-
-  egress {
-    rule_no    = 200
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    protocol   = -1
-    from_port  = 0
-    to_port    = 0
-  }
-
-  tags = {
-    "name"      = "${var.project_name}-pub-network-acl"
-  }
-}
-
-resource "aws_internet_gateway" "pub_internet_gateway" {
-  vpc_id = aws_vpc.vpc.id
-
-  tags = {
-    "name" = "${var.project_name}-internet-gateway",
-  }
-}
-
-resource "aws_route_table" "pub_route_table" {
+# balancer subnets need direct egress to IGW work properly!
+resource "aws_route_table" "balancer_route_table" {
   vpc_id = aws_vpc.vpc.id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.pub_internet_gateway.id
+    gateway_id = aws_internet_gateway.internet_gateway.id
   }
 
   tags = {
-    "name" = "${var.project_name}-pub-route-table",
+    "Name" = "${var.project_name}-balancer-route-table",
   }
 }
 
-resource "aws_route_table_association" "pub_route_table_association" {
-  subnet_id      = aws_subnet.pub_subnet.id
-  route_table_id = aws_route_table.pub_route_table.id
+resource "aws_route_table_association" "balancer_route_table_association" {
+  count          = 3
+  subnet_id      = aws_subnet.balancer_subnet[count.index].id
+  route_table_id = aws_route_table.balancer_route_table.id
 }
 
-resource "aws_nat_gateway" "nat_gateway" {
-  allocation_id = var.elastic_ip_id
-  subnet_id     = aws_subnet.pub_subnet.id
-
-  tags = {
-    "name" = "${var.project_name}-nat-gateway",
-  }
-}
-
-
-
-
-# define private subnets with a NAT to allow them to talk to the world
-
-resource "aws_subnet" "prv_subnet" {
+# subnets for internal nodes of the EKS cluster
+resource "aws_subnet" "node_subnet" {
   count = 3
 
   vpc_id                  = aws_vpc.vpc.id
   availability_zone       = data.aws_availability_zones.available.names[count.index]
-  cidr_block              = "10.0.${count.index}.0/24"  
+  cidr_block              = "10.0.${120 + count.index}.0/24"  
   map_public_ip_on_launch = false
 
   tags = {
-    "name" = "${var.project_name}-prv-subnet-${count.index}",
+    "Name" = "${var.project_name}-node-subnet-${count.index}",
     "kubernetes.io/cluster/${var.project_name}-eks-cluster" = "shared",
     "kubernetes.io/role/internal-elb" = 1
   }
 }
 
-resource "aws_network_acl" "prv_network_acl" {
-  vpc_id       = aws_vpc.vpc.id
-  subnet_ids   = aws_subnet.prv_subnet.*.id
+# each of the node subnets routes out to the NAT gateway in the same AZ
+resource "aws_route_table" "node_route_table" {
+  count  = 3
 
-  ingress {
-    rule_no    = 100
-    action     = "allow"
-    cidr_block = "10.0.100.0/24"
-    protocol   = -1
-    from_port  = 0
-    to_port    = 0
-  }
-
-  ingress {
-    rule_no    = 101
-    action     = "allow"
-    cidr_block = "10.0.0.0/16"
-    protocol   = -1
-    from_port  = 0
-    to_port    = 0
-  }
-
-  ingress {
-    rule_no    = 1001
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    protocol   = -1
-    from_port  = 0
-    to_port    = 0
-  }
-
-  egress {
-    rule_no    = 200
-    action     = "allow"
-    cidr_block = "10.0.100.0/24"
-    protocol   = -1
-    from_port  = 0
-    to_port    = 0
-  }
-
-  egress {
-    rule_no    = 201
-    action     = "allow"
-    protocol   = -1
-    cidr_block = "10.0.0.0/16"
-    from_port  = 0
-    to_port    = 0
-  }
-
-  egress {
-    rule_no    = 2001
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    protocol   = -1
-    from_port  = 0
-    to_port    = 0
-  }
-
-  tags = {
-    "name"      = "${var.project_name}-prv-network-acl"
-  }
-}
-
-resource "aws_route_table" "prv_route_table" {
   vpc_id = aws_vpc.vpc.id
 
   route {
-    cidr_block = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.nat_gateway.id
+    cidr_block      = "0.0.0.0/0"
+    nat_gateway_id  = aws_nat_gateway.nat_gateway[count.index].id
   }
 
   tags = {
-    "name" = "${var.project_name}-prv-route-table",
+    "Name" = "${var.project_name}-node-route-table-${count.index}",
   }
 }
 
-resource "aws_route_table_association" "prv_route_table_association" {
-  count = 3
-
-  subnet_id      = aws_subnet.prv_subnet.*.id[count.index]
-  route_table_id = aws_route_table.prv_route_table.id
+resource "aws_route_table_association" "node_route_table_association" {
+  count          = 3
+  subnet_id      = aws_subnet.node_subnet[count.index].id
+  route_table_id = aws_route_table.node_route_table[count.index].id
 }
